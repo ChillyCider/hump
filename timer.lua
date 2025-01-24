@@ -24,8 +24,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ]]--
 
+---@class Timer
 local Timer = {}
 Timer.__index = Timer
+
+---@alias TimedHandle table
 
 local function _nothing_() end
 
@@ -50,6 +53,7 @@ local function updateTimerHandle(handle, dt)
 		end
 end
 
+---@param dt number Elapsed seconds.
 function Timer:update(dt)
 	-- timers may create new timers, which leads to undefined behavior
 	-- in pairs() - so we need to put them in a different table first
@@ -68,16 +72,27 @@ function Timer:update(dt)
 	end
 end
 
+---@param delay number How long to wait, in seconds.
+---@param during function The function to call every frame.
+---@param after function? The function to call afterward.
+---@return TimedHandle
 function Timer:during(delay, during, after)
 	local handle = { time = 0, during = during, after = after or _nothing_, limit = delay, count = 1 }
 	self.functions[handle] = true
 	return handle
 end
 
+---@param delay number How long to wait, in seconds.
+---@param func function The function to call afterward.
+---@return TimedHandle
 function Timer:after(delay, func)
 	return self:during(delay, _nothing_, func)
 end
 
+---@param delay number How long to wait, in seconds.
+---@param after function The function to call over and over.
+---@param count number? How many times to repeat.
+---@return TimedHandle
 function Timer:every(delay, after, count)
 	local count = count or math.huge -- exploit below: math.huge - 1 = math.huge
 	local handle = { time = 0, during = _nothing_, after = after, limit = delay, count = count }
@@ -85,6 +100,7 @@ function Timer:every(delay, after, count)
 	return handle
 end
 
+---@param handle TimedHandle Stops a timed function.
 function Timer:cancel(handle)
 	self.functions[handle] = nil
 end
@@ -93,6 +109,7 @@ function Timer:clear()
 	self.functions = {}
 end
 
+---@param f fun(wait: fun(seconds: number)) Function to execute in parallel.
 function Timer:script(f)
 	local co = coroutine.wrap(f)
 	co(function(t)
@@ -101,41 +118,59 @@ function Timer:script(f)
 	end)
 end
 
-Timer.tween = setmetatable({
+---@class TweenObject
+Timer.tween = {
 	-- helper functions
+	---@param f function
 	out = function(f) -- 'rotates' a function
 		return function(s, ...) return 1 - f(1-s, ...) end
 	end,
+	---@param f1 function
+	---@param f2 function
 	chain = function(f1, f2) -- concatenates two functions
 		return function(s, ...) return (s < .5 and f1(2*s, ...) or 1 + f2(2*s-1, ...)) * .5 end
 	end,
 
 	-- useful tweening functions
+	---@param s number
 	linear = function(s) return s end,
+	---@param s number
 	quad   = function(s) return s*s end,
+	---@param s number
 	cubic  = function(s) return s*s*s end,
+	---@param s number
 	quart  = function(s) return s*s*s*s end,
+	---@param s number
 	quint  = function(s) return s*s*s*s*s end,
+	---@param s number
 	sine   = function(s) return 1-math.cos(s*math.pi/2) end,
+	---@param s number
 	expo   = function(s) return 2^(10*(s-1)) end,
+	---@param s number
 	circ   = function(s) return 1 - math.sqrt(1-s*s) end,
 
+	---@param s number
+	---@param bounciness number
 	back = function(s,bounciness)
 		bounciness = bounciness or 1.70158
 		return s*s*((bounciness+1)*s - bounciness)
 	end,
 
+	---@param s number
 	bounce = function(s) -- magic numbers ahead
 		local a,b = 7.5625, 1/2.75
 		return math.min(a*s^2, a*(s-1.5*b)^2 + .75, a*(s-2.25*b)^2 + .9375, a*(s-2.625*b)^2 + .984375)
 	end,
 
+	---@param s number
+	---@param amp number
+	---@param period number
 	elastic = function(s, amp, period)
 		amp, period = amp and math.max(1, amp) or 1, period or .3
 		return (-amp * math.sin(2*math.pi/period * (s-1) - math.asin(1/amp))) * 2^(10*(s-1))
 	end,
-}, {
-
+}
+setmetatable(Timer.tween, {
 -- register new tween
 __call = function(tween, self, len, subject, target, method, after, ...)
 	-- recursively collects fields that are defined in both subject and target into a flat list
@@ -192,6 +227,7 @@ __index = function(tweens, key)
 end})
 
 -- Timer instancing
+---@return Timer
 function Timer.new()
 	return setmetatable({functions = {}, tween = Timer.tween}, Timer)
 end
@@ -200,16 +236,74 @@ end
 local default = Timer.new()
 
 -- module forwards calls to default instance
+---@class TimerModule
+---@field tween TweenObject
 local module = {}
 for k in pairs(Timer) do
 	if k ~= "__index" then
 		module[k] = function(...) return default[k](default, ...) end
 	end
 end
+
+function module.new()
+	return Timer.new()
+end
+
+---@param dt number Elapsed seconds.
+---@see Timer.update
+function module.update(dt)
+	default:update(dt)
+end
+
+---@param delay number How long to wait, in seconds.
+---@param during function The function to call every frame.
+---@param after function? The function to call afterward.
+---@return TimedHandle
+---@see Timer.during
+function module.during(delay, during, after)
+	return default:during(delay, during, after)
+end
+
+---@param delay number How long to wait, in seconds.
+---@param func function The function to call afterward.
+---@return TimedHandle
+---@see Timer.after
+function module.after(delay, func)
+	return default:during(delay, _nothing_, func)
+end
+
+---@param delay number How long to wait, in seconds.
+---@param after function The function to call over and over.
+---@param count number? How many times to repeat.
+---@return TimedHandle
+---@see Timer.every
+function module.every(delay, after, count)
+	return default:every(delay, after, count)
+end
+
+---@param handle TimedHandle Stops a timed function.
+---@see Timer.cancel
+function module.cancel(handle)
+	default:cancel(handle)
+end
+
+---@see Timer.clear
+function module.clear()
+	default:clear()
+end
+
+---@param f fun(wait: fun(seconds: number)) Function to execute in parallel.
+---@see Timer.script
+function module.script(f)
+	default:script(f)
+end
+
 module.tween = setmetatable({}, {
 	__index = Timer.tween,
 	__newindex = function(k,v) Timer.tween[k] = v end,
 	__call = function(t, ...) return default:tween(...) end,
 })
 
-return setmetatable(module, {__call = Timer.new})
+setmetatable(module, {__call = Timer.new})
+
+return module
