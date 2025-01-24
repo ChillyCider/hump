@@ -83,7 +83,7 @@ function Timer:during(delay, during, after)
 end
 
 ---@param delay number How long to wait, in seconds.
----@param func function The function to call afterward.
+---@param func fun(thisFunc:function?) The function to call afterward.
 ---@return TimedHandle
 function Timer:after(delay, func)
 	return self:during(delay, _nothing_, func)
@@ -265,7 +265,7 @@ function module.during(delay, during, after)
 end
 
 ---@param delay number How long to wait, in seconds.
----@param func function The function to call afterward.
+---@param func fun(thisFunc:function?) The function to call afterward.
 ---@return TimedHandle
 ---@see Timer.after
 function module.after(delay, func)
